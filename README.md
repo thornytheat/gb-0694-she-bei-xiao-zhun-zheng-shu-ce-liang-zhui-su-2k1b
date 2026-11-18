@@ -14,7 +14,9 @@ docker compose exec -T app pytest -q
 docker compose config --quiet
 ```
 
-打开 http://localhost:18208 。点击“运行样例”，或展开输入区提交CSV。切换七个模块查看计算依据。复核区可通过或退回，同一版本仅允许一次复核。证据CSV包含所有阶段与隔离行，批次内容不因复核变更。
+打开 http://localhost:18208 。点击“运行样例”或“运行边缘样例”，或展开输入区提交CSV。切换七个模块查看计算依据。复核区可通过或退回，同一版本仅允许一次复核。证据CSV包含所有阶段与隔离行，批次内容不因复核变更。
+
+量程边缘的读数若误差带跨界，测量结论为“待复测”而非直接采用；在 M6 页面的“待复测补交”区补交读数、误差带与测量日后重判，裁决追加存档且重复补交不新增。页面证据表含“去向”和“量程依据”两列，可查每次测量的去向与量程判断理由。
 
 SQLite保存在命名卷records；容器重建保留历史。只在确认不再需要数据时执行 `docker compose down -v` 重建。端口可通过.env中的PORT调整。本地也可 `pip install -r requirements.txt` 后 `python -m app.main`。
 

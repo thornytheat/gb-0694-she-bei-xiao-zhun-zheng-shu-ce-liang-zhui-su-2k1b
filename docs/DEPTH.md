@@ -11,9 +11,9 @@
 | M1 证书接收 | 运行证书接收并复核证据 | `POST /api/m1`；`/work/1` | `app/modules/m1_receiving/rules.py` | `tests/test_m1.py` |
 | M2 设备别名 | 运行设备别名并复核证据 | `POST /api/m2`；`/work/2` | `app/modules/m2_identity/rules.py` | `tests/test_m2.py` |
 | M3 有效区间 | 运行有效区间并复核证据 | `POST /api/m3`；`/work/3` | `app/modules/m3_validity/rules.py` | `tests/test_m3.py` |
-| M4 量程匹配 | 运行量程匹配并复核证据 | `POST /api/m4`；`/work/4` | `app/modules/m4_ranges/rules.py` | `tests/test_m4.py` |
+| M4 量程匹配 | 运行量程匹配并复核证据；带单位误差带越界时标为待复测 | `POST /api/m4`；`/work/4` | `app/modules/m4_ranges/rules.py`、`app/domain.py` | `tests/test_m4.py`、`tests/test_band.py` |
 | M5 溯源链路 | 运行溯源链路并复核证据 | `POST /api/m5`；`/work/5` | `app/modules/m5_trace/rules.py` | `tests/test_m5.py` |
-| M6 测量裁决 | 运行测量裁决并复核证据 | `POST /api/m6`；`/work/6` | `app/modules/m6_verdict/rules.py` | `tests/test_m6.py` |
+| M6 测量裁决 | 运行测量裁决，区分可采用/拒用/待复测，补交后重判 | `POST /api/m6`；`/work/6`、`POST /api/retest` | `app/modules/m6_verdict/rules.py`、`app/retest.py` | `tests/test_m6.py`、`tests/test_retest.py` |
 | M7 撤销复核 | 运行撤销复核并复核证据 | `POST /api/m7`；`/work/7` | `app/modules/m7_revocation/rules.py` | `tests/test_m7.py` |
 
 ## 陷阱登记
@@ -28,6 +28,10 @@
 | TRAP-22 | 设备别名 | 静默覆盖或误计 | 显式裁决并保留证据 | `app/modules/m2_identity/rules.py` | `tests/test_m2.py::test_alias_order_independent` |
 | TRAP-23 | 失效日边界 | 静默覆盖或误计 | 显式裁决并保留证据 | `app/modules/m3_validity/rules.py` | `tests/test_m3.py::test_expiry_endpoint` |
 | TRAP-25 | 多证书重叠 | 静默覆盖或误计 | 显式裁决并保留证据 | `app/modules/m3_validity/rules.py` | `tests/test_m3.py::test_overlapping_certificates` |
+| TRAP-26 | 读数在界内但误差带跨界 | 只看读数误收 | 标为待复测，不直接采用也不整批退回 | `app/domain.py`、`app/modules/m4_ranges/rules.py` | `tests/test_band.py::test_reading_inside_but_band_outside_is_retest` |
+| TRAP-27 | 误差带缺单位或单位冲突 | 当作纯数字误判 | 隔离并给出 `BAND`/`BAND_UNIT` 原因码 | `app/domain.py`、`app/modules/m2_identity/rules.py` | `tests/test_band.py::test_bad_band_is_quarantined` |
+| TRAP-28 | 补交重跑重复裁决 | 每次补交新增裁决 | 确定性裁决ID，重跑不新增 | `app/retest.py`、`app/store.py` | `tests/test_retest.py::test_duplicate_resubmission_does_not_add_decision` |
+| TRAP-29 | 补交写入中断 | 半条裁决或丢失补交 | 单事务写入，重试恢复 | `app/store.py` | `tests/test_retest.py::test_crash_between_judge_and_commit_recovers` |
 
 ## 对账规则
 

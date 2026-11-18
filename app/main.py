@@ -3,7 +3,8 @@ import csv,io
 from app.errors import DomainError
 from app.reader import decode
 from app.pipeline import calculate
-from app.store import save, latest, history, review, get_run
+from app.store import save, latest, history, review, get_run, append_retest
+from app.retest import rejudge
 from app.web import bp as web
 
 from app.modules.m1_receiving.handler import bp as bp1
@@ -55,6 +56,9 @@ def run():
         raw=request.files['file'].read();text=decode(raw)
     else:
         payload=request.get_json(silent=True) or {};text=payload.get('csv')
+        if text is None and payload.get('sample')=='edge':
+            from app.config import BAND_SAMPLE
+            text=BAND_SAMPLE.read_text(encoding='utf-8-sig')
     return jsonify(save(calculate(text)))
 @app.route('/api/runs/<ident>')
 def run_detail(ident): return jsonify(get_run(ident))
@@ -66,15 +70,38 @@ def decide():
     try: version=int(body.get('revision',0))
     except (ValueError,TypeError): raise DomainError('VERSION','版本必须为整数')
     return jsonify(review(body.get('id'),version,body.get('decision')))
+@app.route('/api/retest',methods=['POST'])
+def retest():
+    body=request.get_json(silent=True) or {}
+    ident=body.get('id') or body.get('run_id')
+    if not ident: raise DomainError('REQUEST','缺少批次号',400)
+    spec=body.get('record',body.get('补交'))
+    if spec is None:
+        spec={k:v for k,v in body.items() if k not in ('id','run_id')}
+    batch=get_run(ident)
+    record,already=rejudge(batch,spec)
+    if already:
+        saved=get_run(ident)
+        return jsonify({**saved,'decision_record':record,'reused':True})
+    saved,added=append_retest(ident,record)
+    return jsonify({**saved,'decision_record':record,'reused':not added})
 @app.route('/api/evidence.csv')
 def evidence():
     result=get_run(request.args['run_id']) if request.args.get('run_id') else (latest() or save(calculate()));out=io.StringIO(newline='')
     rows=[]
     for index,stage in result['stages'].items():
         rows.extend({'阶段':index,**r} for r in stage['rows'])
+    # 批次原始证据不因补交改变：M6 的证据表回到补交前的原始结论。
+    if result.get('original_verdicts'):
+        rows=[r for r in rows if r.get('阶段')!='6']
+        rows.extend({'阶段':'6',**r} for r in result['original_verdicts'])
     rows.extend({'阶段':'隔离',**r} for r in result['quarantine'])
+    # 补交重判是原始证据之外追加的一层，单独成行并保留原结论供追溯。
+    for original,effective in zip(result.get('original_verdicts') or [],result.get('verdicts') or []):
+        if original.get('结论')!=effective.get('结论'):
+            rows.append({'阶段':'复审','证书':effective.get('证书'),'设备':effective.get('设备'),'测量日':effective.get('测量日'),'读数_V':effective.get('测量值_V'),'误差带_V':effective.get('误差带_V'),'原结论':original.get('结论'),'结论':effective.get('结论'),'原因码':effective.get('原因码'),'去向':effective.get('去向'),'量程依据':effective.get('量程依据'),'行号':effective.get('行号')})
     fields=list(dict.fromkeys(['阶段','run_id','规则版本']+[k for r in rows for k in r]))
     writer=csv.DictWriter(out,fieldnames=fields);writer.writeheader()
     for row in rows: writer.writerow({'run_id':result['manifest']['run_id'],'规则版本':result['manifest']['rule_version'],**row})
-    return Response('\ufeff'+out.getvalue(),mimetype='text/csv',headers={'Content-Disposition':'attachment; filename=evidence.csv'})
+    return Response('﻿'+out.getvalue(),mimetype='text/csv',headers={'Content-Disposition':'attachment; filename=evidence.csv'})
 if __name__=='__main__': app.run(host='0.0.0.0',port=8000)
